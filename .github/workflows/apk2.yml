@@ -1,0 +1,47 @@
+name: Gerar APK 2
+on:
+  push:
+  workflow_dispatch:
+  release:
+    types: [published]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Baixar jogo da release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dl
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern "*" --dir dl --clobber
+      - name: Preparar projeto
+        run: |
+          S=dl
+          mkdir -p www
+          for z in $S/*.zip; do if [ -f "$z" ]; then unzip -o -q "$z" -d www; fi; done
+          if ls $S/*.7z >/dev/null 2>&1; then sudo apt-get install -y p7zip-full >/dev/null; for z in $S/*.7z; do 7z x -y -owww "$z" >/dev/null; done; fi
+          if [ -f $S/index.html ]; then cp $S/index.html www/index.html; fi
+          if [ ! -f www/index.html ] && ls $S/*.html >/dev/null 2>&1; then cp "$(ls $S/*.html | head -n 1)" www/index.html; fi
+          f=$(find www -name index.html | head -n 1)
+          if [ -z "$f" ]; then echo "Nao achei index.html no jogo"; exit 1; fi
+          d=$(dirname "$f")
+          if [ "$d" != www ]; then cp -r "$d"/. www/; fi
+          npm init -y
+          npm i @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          npx cap init "Luiz Jogos" com.fabrica.gmwx3dgsb --web-dir www
+          npx cap add android
+          npx cap sync android
+      - name: Compilar
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jogo-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
